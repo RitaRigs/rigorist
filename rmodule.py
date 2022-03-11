@@ -98,11 +98,12 @@ class RMod:
         pm.select(cl=True)
 
         for entry in self.plan:
-            print("Budiling {}".format(self.plan[entry]['name']))
+            print("Building {}".format(self.plan[entry]['name']))
 
             new_joint = pm.joint(n=(self.side_prefix + self.plan[entry]['name']))
             pm.matchTransform(new_joint, self.plan[entry]['placer_node'])
             # Orient the joint by aiming at a target with a specified up-vector placer.
+            print("new joint is {}".format(new_joint))
             self.plan[entry]['joint_node'] = new_joint
             last_built = new_joint
 
@@ -117,6 +118,8 @@ class RMod:
                     ori.aim_at(new_joint, self.plan[self.plan[entry]['child']]['placer_node'], 
                         up_object=self.plan[entry]['up_plc']['placer_node'], 
                         aim_axis=self.plan[entry]['aim'], up_axis=self.plan[entry]['up'])
+            
+            pm.makeIdentity(apply=True, rotate = True)
 
         return
 
@@ -128,17 +131,9 @@ class RMod:
         # This module on the generic level can't go beyond checking if everything is still in
         # the scene.
 
-        print("Checking all vital components are still in the scene...")
-
-        for entry in self.plan:
-            if(pm.objExists(self.plan[entry]['placer_node']) and 
-            pm.objExists(self.plan[entry]['joint_node'])):
-                continue
-        else:
-            pm.error("{} was removed from the scene.  All nodes must still exist to build the this"
-                " module".format())
-
         print("Building module {}".format(self.name))
+
+        self.build_joints()
 
         return
 

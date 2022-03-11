@@ -49,7 +49,7 @@ class Limb(RMod):
             },
             'end':{
                 'pos':(0.0, 3.0, -4.0),
-                'name':'hinge', 
+                'name':'end', 
                 'placer':(1.0, 'orange'),
                 'up_plc':{'pos':(7.0, 0.0, 0.0), 'size':0.4, 'colour':'white' },
                 'aim':1,
@@ -73,16 +73,6 @@ class Limb(RMod):
 
         # Select clear to disallow any automatic parenting
         pm.select(cl=True)
-
-        self.base_joint = pm.joint(n=(self.side_prefix + self.placer_list[0][2]))
-        self.hinge_joint = pm.joint(n=(self.side_prefix + self.placer_list[1][2]))
-        self.end_joint = pm.joint(n=(self.side_prefix + self.placer_list[2][2]))
-
-        pm.matchTransform(self.base_joint, self.placer_nodes['base'])
-        pm.matchTransform(self.hinge_joint, self.placer_nodes['hinge'])
-        pm.matchTransform(self.end_joint, self.placer_nodes['end'])
-
-        # We orient the shoulder joint to the hinge axis
 
 
 class Arm(Limb):
@@ -135,3 +125,26 @@ class Arms:
         self._right_arm.build_joints()
 
         return
+
+class FKIKlimb(Limb):
+    def __init__(self, name="FKIK_module", dir_prefix=''):
+        '''
+        creating FKIK joint chains with respective functions
+        
+        '''
+        super().__init__(name=name, dir_prefix=dir_prefix)
+
+    def build_module(self):
+        
+        super().build_module()
+
+        shoulder = self.plan['base']['joint_node']
+        wrist = self.plan['end']['joint_node']
+
+        print("Nodes are: {} and {}".format(shoulder, wrist))
+
+        pm.select(cl=True)
+        
+        self.ik=pm.ikHandle(sj=self.plan['base']['joint_node'] , ee=self.plan['end']['joint_node'] , sol='ikRPsolver', srp=True, see=True, s='sticky', jl=True, n=(self.side_prefix + self.name + 'IK'))
+       
+

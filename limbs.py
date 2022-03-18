@@ -7,6 +7,7 @@
 from . rmodule import *
 from . placer import mirror_placer
 from . import orient as ori
+import  pymel.core.datatypes as dt
 
 import pprint
 
@@ -58,11 +59,6 @@ class Limb(RMod):
             }
         }
 
-        # Get membership for the essential joints of a parent joint.
-        self.base_joint = None
-        self.hinge_joint = None
-        self.end_joint = None
-
         return
 
     def build_module(self):
@@ -70,6 +66,36 @@ class Limb(RMod):
         Based upon placers in the scene, begin construction
         '''
         super().build_module()
+
+        #creating the FK and IK joint chains
+        self.fk_base_jnt = pm.duplicate(self.plan['base']['joint_node'])[0]
+        self.fk_hinge_jnt = pm.listRelatives(self.fk_base_jnt, c=True)[0]
+        self.fk_end_jnt = pm.listRelatives(self.fk_hinge_jnt, c=True)[0]
+
+        self.ik_base_jnt = pm.duplicate(self.plan['base']['joint_node'])[0]
+        self.ik_hinge_jnt = pm.listRelatives(self.ik_base_jnt, c=True)[0]
+        self.ik_end_jnt = pm.listRelatives(self.ik_hinge_jnt, c=True)[0]
+
+        #building the pole vector to eventually be constrained to the IK handle. The math will stay within this 
+        #specific class but the pole vector locator can be used in other sub-classes
+        base_pos = dt.Vector(self.plan['base']['pos'])
+        hinge_pos = dt.Vector(self.plan['hinge']['pos'])
+        end_pos = dt.Vector(self.plan['end']['pos'])
+        base_hinge_dist = (base_pos - hinge_pos)
+        base_hinge_dist.normalize()
+        hinge_end_dist = (end_pos - hinge_pos)
+        hinge_end_dist.normalize()
+        
+        #currently, the pole vector is getting placed on the right vector but goes inside the limb? 
+        pv = (base_hinge_dist + hinge_end_dist)
+        pv_pos = hinge_pos - pv
+
+        self.pv_loc = pm.spaceLocator()
+        self.pv_loc.translate.set(pv_pos)
+        self.pv_loc.scaleX.set(2)
+        self.pv_loc.scaleY.set(self.pv_loc.scaleX.get())
+        self.pv_loc.scaleZ.set(self.pv_loc.scaleX.get())
+        pm.makeIdentity(self.pv_loc, apply = True)
 
         # Select clear to disallow any automatic parenting
         pm.select(cl=True)
@@ -94,6 +120,18 @@ class Arm(Limb):
 
     def build_module(self):
         super().build_module()
+        self.fk_base_jnt.rename(self.side_prefix + 'FK_shoulder_jnt')
+        self.fk_hinge_jnt.rename(self.side_prefix + 'FK_elbow_jnt')
+        self.fk_end_jnt.rename(self.side_prefix + 'FK_wrist_jnt')
+
+        self.ik_base_jnt.rename(self.side_prefix + 'IK_shoulder_jnt')
+        self.ik_hinge_jnt.rename(self.side_prefix + 'IK_elbow_jnt')
+        self.ik_end_jnt.rename(self.side_prefix + 'IK_wrist_jnt')
+
+        self.ik = pm.ikHandle(sj=self.ik_base_jnt, ee=self.ik_end_jnt, sol='ikRPsolver', srp=True, see=True, s='sticky', jl=True, n=(self.side_prefix + 'arm_IK'))
+        pm.rename('effector1', self.side_prefix + 'arm_EFF')
+        self.pv_loc.rename(self.side_prefix + "elbow_PV_loc")
+        #pm.poleVectorConstraint(self.pv_loc, self.ik)
 
         print("Arm Module built, as child of limb module.")
 
@@ -101,7 +139,7 @@ class Arm(Limb):
 class Arms:
     def __init__(self, name=""):
         '''
-        A pair of Arms.
+        A pair of Arms. This function does the mirroring.
         '''
 
         self._left_arm = Arm("L_arm")
@@ -125,26 +163,68 @@ class Arms:
         self._right_arm.build_joints()
 
         return
-
-class FKIKlimb(Limb):
-    def __init__(self, name="FKIK_module", dir_prefix=''):
+    
+class Leg(Limb):
+    def __init__(self, name="C_Generic_RModule", dir_prefix=''):
         '''
-        creating FKIK joint chains with respective functions
-        
+        The least most complicated limb that is still acceptable in the rigging world--
+        FK/IK switch, cleanly placed pole-vector, nothing else.
         '''
         super().__init__(name=name, dir_prefix=dir_prefix)
 
+        self.plan['base']['pos'] = (20.0, 175.0, 0.0)
+        self.plan['base']['name'] = 'hip'
+        self.plan['hinge']['pos'] = (28.0, 145.0, 0.0)
+        self.plan['hinge']['name'] = 'knee'
+        self.plan['end']['pos'] = (38.0, 115.0, 0.0)
+        self.plan['end']['name'] = 'ankle'
+
+        return
+
     def build_module(self):
-        
         super().build_module()
+        self.fk_base_jnt.rename(self.side_prefix + 'FK_hip_jnt')
+        self.fk_hinge_jnt.rename(self.side_prefix + 'FK_knee_jnt')
+        self.fk_end_jnt.rename(self.side_prefix + 'FK_ankle_jnt')
 
-        shoulder = self.plan['base']['joint_node']
-        wrist = self.plan['end']['joint_node']
+        self.ik_base_jnt.rename(self.side_prefix + 'IK_hip_jnt')
+        self.ik_hinge_jnt.rename(self.side_prefix + 'IK_knee_jnt')
+        self.ik_end_jnt.rename(self.side_prefix + 'IK_ankle_jnt')
 
-        print("Nodes are: {} and {}".format(shoulder, wrist))
+        self.ik = pm.ikHandle(sj=self.ik_base_jnt, ee=self.ik_end_jnt, sol='ikRPsolver', srp=True, see=True, s='sticky', jl=True, n=(self.side_prefix + 'leg_IK'))
+        pm.rename('effector1', self.side_prefix + 'leg_EFF')
+        self.pv_loc.rename(self.side_prefix + "knee_PV_loc")
+        #pm.poleVectorConstraint(self.pv_loc, self.ik)
 
-        pm.select(cl=True)
+        print("Leg Module built, as child of limb module.")
+
+
+class Legs:
+    def __init__(self, name=""):
+        '''
+        A pair of Legs. This function does the mirroring.
+        '''
+
+        self._left_leg = Leg("L_leg")
+        self._right_leg = Leg("R_leg")
+
+        self._left_leg.build_placers()
+        self._right_leg.build_placers()
+
+        # Now we need to build expressions to make placers mirror on X.
+        for key in self._left_leg.plan:
+            mirror_placer(self._left_leg.plan[key]['placer_node'], 
+            self._right_leg.plan[key]['placer_node'])
         
-        self.ik=pm.ikHandle(sj=self.plan['base']['joint_node'] , ee=self.plan['end']['joint_node'] , sol='ikRPsolver', srp=True, see=True, s='sticky', jl=True, n=(self.side_prefix + self.name + 'IK'))
-       
+    def build(self):
+        '''
+        Build both leg modules.
+        '''
+
+        print("Building both legs...")
+        self._left_leg.build_joints()
+        self._right_leg.build_joints()
+
+        return
+
 

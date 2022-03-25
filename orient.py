@@ -23,7 +23,7 @@ def get_vector(subject, target):
     return aim_vector
     
 
-def aim_at(subject, target, up_vector=(0.0, 0.0, 1.0), up_object=None, aim_axis=0, up_axis=2):
+def aim_at(subject, target, up_vector=(0.0, 0.0, 1.0), up_object=None, aim_axis=1, up_axis=2):
     '''
     Aims the subject node down the target node, and twists it to the provided up-vector.
     Axis involved are specificially defined as 0-2, for x-z.

@@ -8,11 +8,12 @@ from . rmodule import *
 from . placer import mirror_placer
 from . import orient as ori
 import  pymel.core.datatypes as dt
+from . import control as ctrl
 
 import pprint
 
 class Limb(RMod):
-    def __init__(self, name="C_Generic_RModule", dir_prefix='', mirror=True):
+    def __init__(self, name="C_Generic_Limb", dir_prefix='', mirror=True):
         '''
         A generic limb as a base, hinge, and end joint.  For an arm this will be shoulder, elbow,
         and wrist, and for a leg this will be hip, knee, and ankle.
@@ -35,8 +36,8 @@ class Limb(RMod):
                 'name':'base',
                 'placer':(1.0, 'orange'),
                 'up_plc':{'pos':(0.0, 0.0, 7.0), 'size':0.4, 'colour':'white' },
-                'aim':1,
-                'up':0,
+                'aim':0,
+                'up':1,
                 'child':'hinge'
             },
             'hinge':{
@@ -44,8 +45,8 @@ class Limb(RMod):
                 'name':'hinge', 
                 'placer':(1.0, 'orange'),
                 'up_plc':{'pos':(7.0, 7.0, 7.0), 'size':0.4, 'colour':'white' },
-                'aim':1,
-                'up':0,
+                'aim':0,
+                'up':1,
                 'child':'end'
             },
             'end':{
@@ -53,8 +54,8 @@ class Limb(RMod):
                 'name':'end', 
                 'placer':(1.0, 'orange'),
                 'up_plc':{'pos':(7.0, 0.0, 0.0), 'size':0.4, 'colour':'white' },
-                'aim':1,
-                'up':0,
+                'aim':0,
+                'up':1,
                 'child':None
             }
         }
@@ -76,18 +77,21 @@ class Limb(RMod):
         self.ik_hinge_jnt = pm.listRelatives(self.ik_base_jnt, c=True)[0]
         self.ik_end_jnt = pm.listRelatives(self.ik_hinge_jnt, c=True)[0]
 
+        #building FK controls and functions
+         
+
         #building the pole vector to eventually be constrained to the IK handle. The math will stay within this 
         #specific class but the pole vector locator can be used in other sub-classes
-        base_pos = dt.Vector(self.plan['base']['pos'])
-        hinge_pos = dt.Vector(self.plan['hinge']['pos'])
-        end_pos = dt.Vector(self.plan['end']['pos'])
+        base_pos = dt.Vector(self.plan['base']['placer_node'].getTranslation(space='world'))
+        hinge_pos = dt.Vector(self.plan['hinge']['placer_node'].getTranslation(space='world'))
+        end_pos = dt.Vector(self.plan['end']['placer_node'].getTranslation(space='world'))
         base_hinge_dist = (base_pos - hinge_pos)
         base_hinge_dist.normalize()
         hinge_end_dist = (end_pos - hinge_pos)
         hinge_end_dist.normalize()
         
         #currently, the pole vector is getting placed on the right vector but goes inside the limb? 
-        pv = (base_hinge_dist + hinge_end_dist)
+        pv = (base_hinge_dist + hinge_end_dist) * 20
         pv_pos = hinge_pos - pv
 
         self.pv_loc = pm.spaceLocator()
@@ -97,12 +101,15 @@ class Limb(RMod):
         self.pv_loc.scaleZ.set(self.pv_loc.scaleX.get())
         pm.makeIdentity(self.pv_loc, apply = True)
 
+        self.ik, self.eff = pm.ikHandle(sj=self.ik_base_jnt, ee=self.ik_end_jnt, sol='ikRPsolver', srp=True, see=True, s='sticky', jl=True, n=(self.side_prefix + 'limb_IK'))
+        pm.poleVectorConstraint(self.pv_loc, self.ik)
+
         # Select clear to disallow any automatic parenting
         pm.select(cl=True)
 
 
 class Arm(Limb):
-    def __init__(self, name="C_Generic_RModule", dir_prefix=''):
+    def __init__(self, name="L_Generic_Arm", dir_prefix=''):
         '''
         The least most complicated limb that is still acceptable in the rigging world--
         FK/IK switch, cleanly placed pole-vector, nothing else.
@@ -128,10 +135,9 @@ class Arm(Limb):
         self.ik_hinge_jnt.rename(self.side_prefix + 'IK_elbow_jnt')
         self.ik_end_jnt.rename(self.side_prefix + 'IK_wrist_jnt')
 
-        self.ik = pm.ikHandle(sj=self.ik_base_jnt, ee=self.ik_end_jnt, sol='ikRPsolver', srp=True, see=True, s='sticky', jl=True, n=(self.side_prefix + 'arm_IK'))
-        pm.rename('effector1', self.side_prefix + 'arm_EFF')
+        pm.rename(self.eff,self.side_prefix + 'arm_EFF')
         self.pv_loc.rename(self.side_prefix + "elbow_PV_loc")
-        #pm.poleVectorConstraint(self.pv_loc, self.ik)
+        self.ik.rename(self.side_prefix + "arm_IK")
 
         print("Arm Module built, as child of limb module.")
 
@@ -151,7 +157,7 @@ class Arms:
         # Now we need to build expressions to make placers mirror on X.
         for key in self._left_arm.plan:
             mirror_placer(self._left_arm.plan[key]['placer_node'], 
-            self._right_arm.plan[key]['placer_node'])
+                self._right_arm.plan[key]['placer_node'])
         
     def build(self):
         '''
@@ -165,18 +171,18 @@ class Arms:
         return
     
 class Leg(Limb):
-    def __init__(self, name="C_Generic_RModule", dir_prefix=''):
+    def __init__(self, name="L_Generic_Leg", dir_prefix=''):
         '''
         The least most complicated limb that is still acceptable in the rigging world--
         FK/IK switch, cleanly placed pole-vector, nothing else.
         '''
         super().__init__(name=name, dir_prefix=dir_prefix)
 
-        self.plan['base']['pos'] = (20.0, 175.0, 0.0)
+        self.plan['base']['pos'] = (11.0, 114.0, 0.0)
         self.plan['base']['name'] = 'hip'
-        self.plan['hinge']['pos'] = (28.0, 145.0, 0.0)
+        self.plan['hinge']['pos'] = (15.0, 66.0, 2.0)
         self.plan['hinge']['name'] = 'knee'
-        self.plan['end']['pos'] = (38.0, 115.0, 0.0)
+        self.plan['end']['pos'] = (17.0, 15.0, -4.0)
         self.plan['end']['name'] = 'ankle'
 
         return
@@ -191,10 +197,9 @@ class Leg(Limb):
         self.ik_hinge_jnt.rename(self.side_prefix + 'IK_knee_jnt')
         self.ik_end_jnt.rename(self.side_prefix + 'IK_ankle_jnt')
 
-        self.ik = pm.ikHandle(sj=self.ik_base_jnt, ee=self.ik_end_jnt, sol='ikRPsolver', srp=True, see=True, s='sticky', jl=True, n=(self.side_prefix + 'leg_IK'))
-        pm.rename('effector1', self.side_prefix + 'leg_EFF')
+        pm.rename(self.eff,self.side_prefix + 'leg_EFF')
         self.pv_loc.rename(self.side_prefix + "knee_PV_loc")
-        #pm.poleVectorConstraint(self.pv_loc, self.ik)
+        self.ik.rename(self.side_prefix + "leg_IK")
 
         print("Leg Module built, as child of limb module.")
 

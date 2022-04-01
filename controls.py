@@ -39,7 +39,7 @@ def create_control (target_position=None, shape_dict=None, rot=(0, 0, 0), name='
     '''    
 
     if(shape_dict == None):
-        # If shape_dict is none, fall back on loading a shape...
+        # If shape_dict is none, fall back on loading a shape..."load_shape" is just the name of the shape that's saved in the .json
         if(load_shape is not None):
             try:
                 shape_dict = (
@@ -66,7 +66,7 @@ def create_control (target_position=None, shape_dict=None, rot=(0, 0, 0), name='
 
 	# TODO
 	# Snap it to a target node...
-	# Apply it's rotational offset.
+	# Apply it's rotational offset. 
 
     return new_handle
 

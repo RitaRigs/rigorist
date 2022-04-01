@@ -8,7 +8,7 @@ from . rmodule import *
 from . placer import mirror_placer
 from . import orient as ori
 import  pymel.core.datatypes as dt
-from . import control as ctrl
+from . import controls as ctrl
 
 import pprint
 
@@ -78,7 +78,23 @@ class Limb(RMod):
         self.ik_end_jnt = pm.listRelatives(self.ik_hinge_jnt, c=True)[0]
 
         #building FK controls and functions
-         
+
+        self.base_fk_control= ctrl.create_control(load_shape ='ring')
+        pm.matchTransform(self.base_fk_control, self.fk_base_jnt)
+        self.base_fk_null= ori.create_null(self.base_fk_control)
+        pm.orientConstraint(self.base_fk_control,self.fk_base_jnt)
+        
+        self.hinge_fk_control= ctrl.create_control(load_shape ='ring')
+        pm.matchTransform(self.hinge_fk_control, self.fk_hinge_jnt)
+        self.hinge_fk_null= ori.create_null(self.hinge_fk_control)
+        pm.orientConstraint(self.hinge_fk_control,self.fk_hinge_jnt)
+        pm.parent(self.hinge_fk_null,self.base_fk_control)
+        
+        self.end_fk_control= ctrl.create_control(load_shape ='ring')
+        pm.matchTransform(self.end_fk_control, self.fk_end_jnt)
+        self.end_fk_null= ori.create_null(self.end_fk_control)
+        pm.orientConstraint(self.end_fk_control,self.fk_end_jnt)
+        pm.parent(self.end_fk_null,self.hinge_fk_control)
 
         #building the pole vector to eventually be constrained to the IK handle. The math will stay within this 
         #specific class but the pole vector locator can be used in other sub-classes
@@ -90,7 +106,7 @@ class Limb(RMod):
         hinge_end_dist = (end_pos - hinge_pos)
         hinge_end_dist.normalize()
         
-        #currently, the pole vector is getting placed on the right vector but goes inside the limb? 
+        #creates pole vector according to joint placement
         pv = (base_hinge_dist + hinge_end_dist) * 20
         pv_pos = hinge_pos - pv
 
@@ -101,8 +117,55 @@ class Limb(RMod):
         self.pv_loc.scaleZ.set(self.pv_loc.scaleX.get())
         pm.makeIdentity(self.pv_loc, apply = True)
 
+        #creating ik handle
         self.ik, self.eff = pm.ikHandle(sj=self.ik_base_jnt, ee=self.ik_end_jnt, sol='ikRPsolver', srp=True, see=True, s='sticky', jl=True, n=(self.side_prefix + 'limb_IK'))
         pm.poleVectorConstraint(self.pv_loc, self.ik)
+
+        #creating ik control
+        self.ik_control= ctrl.create_control(load_shape ='cube')
+        pm.matchTransform(self.ik_control, self.ik_end_jnt, rot = False, pos = True)
+        self.ik_null= ori.create_null(self.ik_control)
+
+        pm.parentConstraint(self.ik_control,self.ik)
+
+        #creating the pole vector control
+        self.pv_control = ctrl.create_control(load_shape='jack')
+        pm.matchTransform(self.pv_control,self.pv_loc)
+        pm.makeIdentity(self.pv_control, apply=True)
+        pm.parent(self.pv_loc, self.pv_control)
+
+        #creating the FKIK switch
+        self.base_blend = pm.createNode('pairBlend')
+        self.hinge_blend = pm.createNode('pairBlend')
+        self.end_blend = pm.createNode('pairBlend')
+
+        self.fk_base_jnt.translate >> self.base_blend.inTranslate1
+        self.ik_base_jnt.translate >> self.base_blend.inTranslate2
+        self.base_blend.outTranslate >> self.plan['base']['joint_node'].translate
+        self.fk_base_jnt.rotate >> self.base_blend.inRotate1
+        self.ik_base_jnt.rotate >> self.base_blend.inRotate2
+        self.base_blend.outRotate >> self.plan['base']['joint_node'].rotate
+
+        self.fk_hinge_jnt.translate >> self.hinge_blend.inTranslate1
+        self.ik_hinge_jnt.translate >> self.hinge_blend.inTranslate2
+        self.hinge_blend.outTranslate >> self.plan['hinge']['joint_node'].translate
+        self.fk_hinge_jnt.rotate >> self.hinge_blend.inRotate1
+        self.ik_hinge_jnt.rotate >> self.hinge_blend.inRotate2
+        self.hinge_blend.outRotate >> self.plan['hinge']['joint_node'].rotate
+
+        self.fk_end_jnt.translate >> self.end_blend.inTranslate1
+        self.ik_end_jnt.translate >> self.end_blend.inTranslate2
+        self.end_blend.outTranslate >> self.plan['end']['joint_node'].translate
+        self.fk_end_jnt.rotate >> self.end_blend.inRotate1
+        self.ik_end_jnt.rotate >> self.end_blend.inRotate2
+        self.end_blend.outRotate >> self.plan['end']['joint_node'].rotate
+
+        if (self.base_blend.weight == 0, self.hinge_blend.weight== 0, self.end_blend.weight == 0):
+            self.ik_control.visibility = 0
+            self.base_fk_null.visibility = 1
+        else:
+            self.ik_control.visibility = 1
+            self.base_fk_null.visibility = 0
 
         # Select clear to disallow any automatic parenting
         pm.select(cl=True)
@@ -127,17 +190,41 @@ class Arm(Limb):
 
     def build_module(self):
         super().build_module()
+
+        #rename fk joints, controls, and nulls
         self.fk_base_jnt.rename(self.side_prefix + 'FK_shoulder_jnt')
         self.fk_hinge_jnt.rename(self.side_prefix + 'FK_elbow_jnt')
         self.fk_end_jnt.rename(self.side_prefix + 'FK_wrist_jnt')
+
+        self.base_fk_control.rename(self.side_prefix + 'FK_shoulder_CTRL')
+        self.hinge_fk_control.rename(self.side_prefix + 'FK_elbow_CTRL')
+        self.end_fk_control.rename(self.side_prefix + 'FK_wrist_CTRL')
+
+        self.base_fk_null.rename(self.side_prefix + 'FK_shoulder_NULL')
+        self.hinge_fk_null.rename(self.side_prefix + 'FK_elbow_NULL')
+        self.end_fk_null.rename(self.side_prefix + 'FK_wrist_NULL')
 
         self.ik_base_jnt.rename(self.side_prefix + 'IK_shoulder_jnt')
         self.ik_hinge_jnt.rename(self.side_prefix + 'IK_elbow_jnt')
         self.ik_end_jnt.rename(self.side_prefix + 'IK_wrist_jnt')
 
+        #rename ik joints, controls, handle, locator, and nulls
         pm.rename(self.eff,self.side_prefix + 'arm_EFF')
-        self.pv_loc.rename(self.side_prefix + "elbow_PV_loc")
+        self.pv_loc.rename(self.side_prefix + "arm_PV_loc")
         self.ik.rename(self.side_prefix + "arm_IK")
+        self.ik_null.rename(self.side_prefix + "arm_IK_NULL")
+        self.ik_control.rename(self.side_prefix + "arm_IK_CTRL")
+        self.pv_control.rename(self.side_prefix + "arm_PV_CTRL")
+
+        #rename fkik switch nodes and controls
+        self.base_blend.rename(self.side_prefix + "FKIK_shoulder_BLEND")
+        self.hinge_blend.rename(self.side_prefix + "FKIK_elbow_BLEND")
+        self.end_blend.rename(self.side_prefix + "FKIK_wrist_BLEND")
+
+        #arm defaults to FK mode
+        self.base_blend.weight = 0
+        self.hinge_blend.weight = 0
+        self.end_blend.weight = 0
 
         print("Arm Module built, as child of limb module.")
 
@@ -189,17 +276,41 @@ class Leg(Limb):
 
     def build_module(self):
         super().build_module()
+
+        #rename fk joints, controls, and nulls
         self.fk_base_jnt.rename(self.side_prefix + 'FK_hip_jnt')
         self.fk_hinge_jnt.rename(self.side_prefix + 'FK_knee_jnt')
         self.fk_end_jnt.rename(self.side_prefix + 'FK_ankle_jnt')
+
+        self.base_fk_control.rename(self.side_prefix + 'FK_hip_CTRL')
+        self.hinge_fk_control.rename(self.side_prefix + 'FK_knee_CTRL')
+        self.end_fk_control.rename(self.side_prefix + 'FK_ankle_CTRL')
+
+        self.base_fk_null.rename(self.side_prefix + 'FK_hip_NULL')
+        self.hinge_fk_null.rename(self.side_prefix + 'FK_knee_NULL')
+        self.end_fk_null.rename(self.side_prefix + 'FK_ankle_NULL')
 
         self.ik_base_jnt.rename(self.side_prefix + 'IK_hip_jnt')
         self.ik_hinge_jnt.rename(self.side_prefix + 'IK_knee_jnt')
         self.ik_end_jnt.rename(self.side_prefix + 'IK_ankle_jnt')
 
+        #rename ik joints, controls, handle, locator, and nulls
         pm.rename(self.eff,self.side_prefix + 'leg_EFF')
-        self.pv_loc.rename(self.side_prefix + "knee_PV_loc")
+        self.pv_loc.rename(self.side_prefix + "leg_PV_loc")
         self.ik.rename(self.side_prefix + "leg_IK")
+        self.ik_null.rename(self.side_prefix + "leg_IK_NULL")
+        self.ik_control.rename(self.side_prefix + "leg_IK_CTRL")
+        self.pv_control.rename(self.side_prefix + "leg_PV_CTRL")
+
+        #rename fkik switch nodes and controls
+        self.base_blend.rename(self.side_prefix + "FKIK_hip_BLEND")
+        self.hinge_blend.rename(self.side_prefix + "FKIK_knee_BLEND")
+        self.end_blend.rename(self.side_prefix + "FKIK_ankle_BLEND")
+
+        #leg defaults to IK mode
+        self.base_blend.weight = 0
+        self.hinge_blend.weight = 0
+        self.end_blend.weight = 0
 
         print("Leg Module built, as child of limb module.")
 

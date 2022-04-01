@@ -23,7 +23,7 @@ def get_vector(subject, target):
     return aim_vector
     
 
-def aim_at(subject, target, up_vector=(0.0, 0.0, 1.0), up_object=None, aim_axis=1, up_axis=2):
+def aim_at(subject, target, up_vector=(0.0, 0.0, 1.0), up_object=None, aim_axis=0, up_axis=2):
     '''
     Aims the subject node down the target node, and twists it to the provided up-vector.
     Axis involved are specificially defined as 0-2, for x-z.
@@ -113,17 +113,15 @@ def aim_at(subject, target, up_vector=(0.0, 0.0, 1.0), up_object=None, aim_axis=
 
     return
 
-
-def swap_rot_for_jo(joint_node):
+def create_null(subject):
     '''
-    Swaps rotation of transform for the jointOrient values.
-    joint_node - PyNode of a joint in scene.
+    Create an empty trans node, and match transform to a target,
+    Then place the target beneath it.
     '''
 
-    jo = joint_node.jointOrient.get()
-    ro = joint_node.rotate.get()
+    null_trans = pm.createNode('transform', n=(subject.name() + '_null'))
+    pm.matchTransform(null_trans, subject)
 
-    joint_node.jointOrient.set(ro)
-    joint_node.rotate.set(jo)
+    pm.parent(subject, null_trans)
 
-    return
+    return null_trans

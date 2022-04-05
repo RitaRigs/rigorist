@@ -160,7 +160,10 @@ class Limb(RMod):
         self.ik_end_jnt.rotate >> self.end_blend.inRotate2
         self.end_blend.outRotate >> self.plan['end']['joint_node'].rotate
 
-        if (self.base_blend.weight == 0, self.hinge_blend.weight== 0, self.end_blend.weight == 0):
+        self.fkik_control = ctrl.create_control(load_shape='plus')
+        pm.addAttr(self.fkik_control, ln='FKIK_Switch', at = float, min= -10, max= 10)
+        pm.matchTransform(self.fkik_control, self.plan['end']['joint_node'])
+        if (self.fkik_control.FKIK_Switch == 0):
             self.ik_control.visibility = 0
             self.base_fk_null.visibility = 1
         else:

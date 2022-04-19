@@ -120,7 +120,7 @@ def create_null(subject):
     '''
 
     null_trans = pm.createNode('transform', n=(subject.name() + '_null'))
-    pm.matchTransform(null_trans, subject)
+    pm.matchTransform(null_trans, subject, scl=False)
 
     pm.parent(subject, null_trans)
 

@@ -119,7 +119,7 @@ class RMod:
                         up_object=self.plan[entry]['up_plc']['placer_node'], 
                         aim_axis=self.plan[entry]['aim'], up_axis=self.plan[entry]['up'])
             
-            pm.makeIdentity(apply=True, rotate = True)
+            pm.makeIdentity(apply=True)
 
         return
 

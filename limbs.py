@@ -4,6 +4,7 @@
 # Last Modified: Sunday, 27th February 2022 8:58:10 pm
 # Modified By: Matthew Riche
 
+
 from . rmodule import *
 from . placer import mirror_placer
 from . import orient as ori
@@ -78,19 +79,20 @@ class Limb(RMod):
         self.ik_end_jnt = pm.listRelatives(self.ik_hinge_jnt, c=True)[0]
 
         #building FK controls and functions
+        #**Note to self: make load_shape customizeable to the orientation**
 
-        self.base_fk_control= ctrl.create_control(load_shape ='ring')
+        self.base_fk_control= ctrl.create_control(load_shape ='ringX')
         pm.matchTransform(self.base_fk_control, self.fk_base_jnt)
         self.base_fk_null= ori.create_null(self.base_fk_control)
         pm.orientConstraint(self.base_fk_control,self.fk_base_jnt)
         
-        self.hinge_fk_control= ctrl.create_control(load_shape ='ring')
+        self.hinge_fk_control= ctrl.create_control(load_shape ='ringX')
         pm.matchTransform(self.hinge_fk_control, self.fk_hinge_jnt)
         self.hinge_fk_null= ori.create_null(self.hinge_fk_control)
         pm.orientConstraint(self.hinge_fk_control,self.fk_hinge_jnt)
         pm.parent(self.hinge_fk_null,self.base_fk_control)
         
-        self.end_fk_control= ctrl.create_control(load_shape ='ring')
+        self.end_fk_control= ctrl.create_control(load_shape ='ringX')
         pm.matchTransform(self.end_fk_control, self.fk_end_jnt)
         self.end_fk_null= ori.create_null(self.end_fk_control)
         pm.orientConstraint(self.end_fk_control,self.fk_end_jnt)
@@ -133,8 +135,10 @@ class Limb(RMod):
         pm.matchTransform(self.pv_control,self.pv_loc)
         pm.makeIdentity(self.pv_control, apply=True)
         pm.parent(self.pv_loc, self.pv_control)
+        pm.parent(self.pv_control, self.ik_control)
 
-        #creating the FKIK switch
+        #creating the FKIK switch with pairBlend
+
         self.base_blend = pm.createNode('pairBlend')
         self.hinge_blend = pm.createNode('pairBlend')
         self.end_blend = pm.createNode('pairBlend')
@@ -160,15 +164,35 @@ class Limb(RMod):
         self.ik_end_jnt.rotate >> self.end_blend.inRotate2
         self.end_blend.outRotate >> self.plan['end']['joint_node'].rotate
 
-        self.fkik_control = ctrl.create_control(load_shape='plus')
-        pm.addAttr(self.fkik_control, ln='FKIK_Switch', at = float, min= -10, max= 10)
+        #creating the FKIK Switch control and setting up remapValue nodes
+
+        self.fkik_control = ctrl.create_control(load_shape='plusZ')
+        pm.addAttr(self.fkik_control, at='float', hxv=True, hnv=True, max=10, min=-10, sn='FKIK_Switch', h=False, k=True, r=True)
         pm.matchTransform(self.fkik_control, self.plan['end']['joint_node'])
-        if (self.fkik_control.FKIK_Switch == 0):
-            self.ik_control.visibility = 0
-            self.base_fk_null.visibility = 1
-        else:
-            self.ik_control.visibility = 1
-            self.base_fk_null.visibility = 0
+
+        self.base_switch = pm.createNode('remapValue')
+        self.hinge_switch = pm.createNode('remapValue')
+        self.end_switch = pm.createNode('remapValue')
+        self.fk_vis = pm.createNode('remapValue')
+        self.ik_vis = pm.createNode('remapValue')
+
+        #control is in FK mode when the switch is set to -10 so we need to make sure the FK controllers show on the MIN value
+        pm.setAttr(self.fk_vis.outputMax, 0)
+        pm.setAttr(self.fk_vis.outputMin, 1)
+
+        #remapping the fkik switch value to the pairblend nodes and visibility of FK and IK controls
+
+        self.fkik_control.FKIK_Switch >> self.base_switch.inputValue
+        self.fkik_control.FKIK_Switch >> self.hinge_switch.inputValue
+        self.fkik_control.FKIK_Switch >> self.end_switch.inputValue
+        self.fkik_control.FKIK_Switch >> self.fk_vis.inputValue
+        self.fkik_control.FKIK_Switch >> self.ik_vis.inputValue
+    
+        self.base_switch.outValue >> self.base_blend.weight
+        self.hinge_switch.outValue >> self.hinge_blend.weight
+        self.end_switch.outValue >> self.end_blend.weight
+        self.fk_vis.outValue >> self.base_fk_null.visibility
+        self.ik_vis.outValue >> self.ik_control.visibility
 
         # Select clear to disallow any automatic parenting
         pm.select(cl=True)
@@ -223,11 +247,15 @@ class Arm(Limb):
         self.base_blend.rename(self.side_prefix + "FKIK_shoulder_BLEND")
         self.hinge_blend.rename(self.side_prefix + "FKIK_elbow_BLEND")
         self.end_blend.rename(self.side_prefix + "FKIK_wrist_BLEND")
+        self.base_switch.rename(self.side_prefix + "FKIK_shoulder_REMAP")
+        self.hinge_switch.rename(self.side_prefix + "FKIK_elbow_REMAP")
+        self.end_switch.rename(self.side_prefix + "FKIK_wrist_REMAP")
+        self.fk_vis.rename(self.side_prefix + "FK_arm_vis_REMAP")
+        self.ik_vis.rename(self.side_prefix + "IK_arm_vis_REMAP")
 
         #arm defaults to FK mode
-        self.base_blend.weight = 0
-        self.hinge_blend.weight = 0
-        self.end_blend.weight = 0
+        self.fkik_control.rename(self.side_prefix + "arm_FKIK_Switch")
+        pm.setAttr(self.fkik_control.FKIK_Switch, -10)
 
         print("Arm Module built, as child of limb module.")
 
@@ -237,7 +265,6 @@ class Arms:
         '''
         A pair of Arms. This function does the mirroring.
         '''
-
         self._left_arm = Arm("L_arm")
         self._right_arm = Arm("R_arm")
 
@@ -253,13 +280,13 @@ class Arms:
         '''
         Build both arm modules.
         '''
-
         print("Building both arms...")
         self._left_arm.build_joints()
         self._right_arm.build_joints()
 
         return
     
+
 class Leg(Limb):
     def __init__(self, name="L_Generic_Leg", dir_prefix=''):
         '''
@@ -309,11 +336,14 @@ class Leg(Limb):
         self.base_blend.rename(self.side_prefix + "FKIK_hip_BLEND")
         self.hinge_blend.rename(self.side_prefix + "FKIK_knee_BLEND")
         self.end_blend.rename(self.side_prefix + "FKIK_ankle_BLEND")
+        self.base_switch.rename(self.side_prefix + "FKIK_hip_REMAP")
+        self.hinge_switch.rename(self.side_prefix + "FKIK_knee_REMAP")
+        self.end_switch.rename(self.side_prefix + "FKIK_ankle_REMAP")
+        self.fk_vis.rename(self.side_prefix + "FK_leg_vis_REMAP")
+        self.ik_vis.rename(self.side_prefix + "IK_leg_vis_REMAP")
 
         #leg defaults to IK mode
-        self.base_blend.weight = 0
-        self.hinge_blend.weight = 0
-        self.end_blend.weight = 0
+        pm.setAttr(self.fkik_control.FKIK_Switch, 10)
 
         print("Leg Module built, as child of limb module.")
 
@@ -323,7 +353,6 @@ class Legs:
         '''
         A pair of Legs. This function does the mirroring.
         '''
-
         self._left_leg = Leg("L_leg")
         self._right_leg = Leg("R_leg")
 
@@ -339,7 +368,6 @@ class Legs:
         '''
         Build both leg modules.
         '''
-
         print("Building both legs...")
         self._left_leg.build_joints()
         self._right_leg.build_joints()
